@@ -3,8 +3,6 @@
 """
 
 import sys
-sys.path.insert(0, '../../Utilities/')
-
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,7 +12,7 @@ import time
 from itertools import product, combinations
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from plotting import newfig, savefig
+# from Utilities.plotting import newfig, savefig
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.gridspec as gridspec
 
@@ -25,7 +23,7 @@ class PhysicsInformedNN:
     # Initialize the class
     def __init__(self, velocity, orientation, acceleration, steering_angle, t, layers):
         
-        X = np.concatenate([velocity, orientation, acceleration, steering_angle, t], 1)
+        X = np.stack([velocity, orientation, acceleration, steering_angle, t], 1)
         
         self.lb = X.min(0)
         self.ub = X.max(0)
@@ -44,7 +42,7 @@ class PhysicsInformedNN:
         self.weights, self.biases = self.initialize_NN(layers)        
         
         # Initialize parameters
-        self.lambda_1 = tf.Variable([0.0], dtype=tf.float32)
+        self.lambda_1 = tf.Variable([2.5], dtype=tf.float32)
         
         # tf placeholders and graph
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
@@ -62,16 +60,20 @@ class PhysicsInformedNN:
         # self.u_tf = tf.placeholder(tf.float32, shape=[None, self.u.shape[1]])
         # self.v_tf = tf.placeholder(tf.float32, shape=[None, self.v.shape[1]])
         
-        self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred = self.net_ST(self.velocity_tf, 
-                                                                                            self.orientation_tf, 
-                                                                                            self.acceleration_tf, 
-                                                                                            self.steering_angle_tf, 
-                                                                                            self.t_tf)
+        #self.u_pred, self.v_pred, self.p_pred, self.f_u_pred, self.f_v_pred = 
+        self.x_pred, self.y_pred, self.velocity_pred, self.orientation_pred, self.acceleration_pred, self.steering_angle_pred, self.f_x, self.f_y, self.f_orientation = self.net_ST(self.velocity_tf, 
+                                                                                                                                                        self.orientation_tf, 
+                                                                                                                                                        self.acceleration_tf, 
+                                                                                                                                                        self.steering_angle_tf, 
+                                                                                                                                                        self.t_tf)
         
-        self.loss = tf.reduce_sum(tf.square(self.u_tf - self.u_pred)) + \
-                    tf.reduce_sum(tf.square(self.v_tf - self.v_pred)) + \
-                    tf.reduce_sum(tf.square(self.f_u_pred)) + \
-                    tf.reduce_sum(tf.square(self.f_v_pred))
+        self.loss = tf.reduce_sum(tf.square(self.velocity_tf - self.velocity_pred)) + \
+                    tf.reduce_sum(tf.square(self.orientation_tf - self.orientation_pred)) + \
+                    tf.reduce_sum(tf.square(self.acceleration_tf - self.acceleration_pred)) + \
+                    tf.reduce_sum(tf.square(self.steering_angle_tf - self.steering_angle_pred)) + \
+                    tf.reduce_sum(tf.square(self.f_x)) + \
+                    tf.reduce_sum(tf.square(self.f_y)) + \
+                    tf.reduce_sum(tf.square(self.f_orientation))
                     
         self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss, 
                                                                 method = 'L-BFGS-B', 
@@ -121,14 +123,16 @@ class PhysicsInformedNN:
         lambda_1 = self.lambda_1
         
         predictions = self.neural_net(tf.concat([velocity, orientation, acceleration, steering_angle, t], 1), self.weights, self.biases)
-        x = predictions[:,0:1]
-        y = predictions[:,1:2]
-        orientation = predictions[:,2:3]
-        steering_angle = predictions[:,3:4]
+        x_pred = predictions[:,0:1]
+        y_pred = predictions[:,1:2]
+        velocity_pred = predictions[:,2:3]
+        orientation_pred = predictions[:,3:4]
+        acceleration_pred = predictions[:,4:5]
+        steering_angle_pred = predictions[:,5:6]
         
-        x_t = tf.gradients(x, t)[0]
-        y_t = tf.gradients(y, t)[0]  
-        orientation_t = tf.gradients(orientation, t)[0]  
+        x_t = tf.gradients(x_pred, t)[0]
+        y_t = tf.gradients(y_pred, t)[0]  
+        orientation_t = tf.gradients(orientation_pred, t)[0]  
 
         # u_t = tf.gradients(u, t)[0]
         # u_x = tf.gradients(u, x)[0]
@@ -145,19 +149,18 @@ class PhysicsInformedNN:
         # p_x = tf.gradients(p, x)[0]
         # p_y = tf.gradients(p, y)[0]
 
-        f_x = x_t - velocity * tf.math.cos(orientation)
-        f_y = y_t - velocity * tf.math.sin(orientation)
-        f_orientation = orientation_t - velocity / lambda_1 * tf.math.tan(steering_angle)
+        f_x = x_t - velocity_pred * tf.math.cos(orientation_pred)
+        f_y = y_t - velocity_pred * tf.math.sin(orientation_pred)
+        f_orientation = orientation_t - velocity_pred / lambda_1 * tf.math.tan(steering_angle_pred)
         
-        return x, y, orientation, steering_angle, f_x, f_y, f_orientation
+        return x_pred, y_pred, velocity_pred, orientation_pred, acceleration_pred, steering_angle_pred, f_x, f_y, f_orientation
     
-    def callback(self, loss, lambda_1, lambda_2):
-        print('Loss: %.3e, l1: %.3f, l2: %.5f' % (loss, lambda_1, lambda_2))
+    def callback(self, loss, lambda_1):#, lambda_2):
+        print('Loss: %.3e, l1: %.3f' % (loss, lambda_1))#, lambda_2))
       
     def train(self, nIter): 
 
-        tf_dict = {self.x_tf: self.x, self.y_tf: self.y, self.t_tf: self.t,
-                   self.u_tf: self.u, self.v_tf: self.v}
+        tf_dict = {self.velocity_tf: self.velocity, self.orientation_tf: self.orientation, self.acceleration_tf: self.acceleration, self.steering_angle_tf: self.steering_angle, self.t_tf: self.t}
         
         start_time = time.time()
         for it in range(nIter):
@@ -168,14 +171,14 @@ class PhysicsInformedNN:
                 elapsed = time.time() - start_time
                 loss_value = self.sess.run(self.loss, tf_dict)
                 lambda_1_value = self.sess.run(self.lambda_1)
-                lambda_2_value = self.sess.run(self.lambda_2)
+                #lambda_2_value = self.sess.run(self.lambda_2)
                 print('It: %d, Loss: %.3e, l1: %.3f, l2: %.5f, Time: %.2f' % 
-                      (it, loss_value, lambda_1_value, lambda_2_value, elapsed))
+                      (it, loss_value, lambda_1_value, 0, elapsed))
                 start_time = time.time()
             
         self.optimizer.minimize(self.sess,
                                 feed_dict = tf_dict,
-                                fetches = [self.loss, self.lambda_1, self.lambda_2],
+                                fetches = [self.loss, self.lambda_1], #, self.lambda_2],
                                 loss_callback = self.callback)
             
     
@@ -216,53 +219,65 @@ def axisEqual3D(ax):
         
         
 if __name__ == "__main__": 
-      
-    N_train = 5000
+    import pandas as pd
     
-    layers = [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
+    
+    layers = [5, 20, 20, 20, 20, 20, 20, 20, 20, 6]
     
     # Load Data
-    data = scipy.io.loadmat('../Data/cylinder_nektar_wake.mat')
-           
-    U_star = data['U_star'] # N x 2 x T
-    P_star = data['p_star'] # N x T
-    t_star = data['t'] # T x 1
-    X_star = data['X_star'] # N x 2
+    dfs = [pd.read_csv(f'main/Data/data_{k}.csv', sep=',',header=0) for k in range(1, 6)]
+
+    # data = np.array(df.values)
+    # data = np.('../Data/cylinder_nektar_wake.mat')
     
-    N = X_star.shape[0]
-    T = t_star.shape[0]
+    velocity_star = np.concatenate([np.array(df['velocity']) for df in dfs])
+    orientation_star = np.concatenate([np.array(df['orientation']) for df in dfs])
+    steering_angle_star = np.concatenate([np.array(df['steering wheel angle']) for df in dfs])
+    acceleration_star = np.concatenate([np.array(df['acceleration']) for df in dfs])
+    time_star = np.concatenate([np.array(df['time']) for df in dfs])
+
+    # U_star = data['U_star'] # N x 2 x T
+    # P_star = data['p_star'] # N x T
+    # t_star = data['t'] # T x 1
+    # X_star = data['X_star'] # N x 2
+    
+    # N = velocity_star.shape[0]
+    # T = time_star.shape[0]
     
     # Rearrange Data 
-    XX = np.tile(X_star[:,0:1], (1,T)) # N x T
-    YY = np.tile(X_star[:,1:2], (1,T)) # N x T
-    TT = np.tile(t_star, (1,N)).T # N x T
+    # XX = np.tile(X_star[:,0:1], (1,T)) # N x T
+    # YY = np.tile(X_star[:,1:2], (1,T)) # N x T
+    # TT = np.tile(t_star, (1,N)).T # N x T
     
-    UU = U_star[:,0,:] # N x T
-    VV = U_star[:,1,:] # N x T
-    PP = P_star # N x T
+    # UU = U_star[:,0,:] # N x T
+    # VV = U_star[:,1,:] # N x T
+    # PP = P_star # N x T
     
-    x = XX.flatten()[:,None] # NT x 1
-    y = YY.flatten()[:,None] # NT x 1
-    t = TT.flatten()[:,None] # NT x 1
+    # x = XX.flatten()[:,None] # NT x 1
+    # y = YY.flatten()[:,None] # NT x 1
+    # t = TT.flatten()[:,None] # NT x 1
     
-    u = UU.flatten()[:,None] # NT x 1
-    v = VV.flatten()[:,None] # NT x 1
-    p = PP.flatten()[:,None] # NT x 1
+    # u = UU.flatten()[:,None] # NT x 1
+    # v = VV.flatten()[:,None] # NT x 1
+    # p = PP.flatten()[:,None] # NT x 1
     
     ######################################################################
     ######################## Noiseles Data ###############################
     ######################################################################
     # Training Data    
-    idx = np.random.choice(N*T, N_train, replace=False)
-    x_train = x[idx,:]
-    y_train = y[idx,:]
-    t_train = t[idx,:]
-    u_train = u[idx,:]
-    v_train = v[idx,:]
+    N_train = int(0.8*velocity_star.shape[0])
+    print(N_train)
+    idx = np.random.choice(velocity_star.shape[0], N_train, replace=False)
+    velocity_star_train = velocity_star[idx]
+    orientation_star_train = orientation_star[idx]
+    acceleration_star_train = acceleration_star[idx]
+    steering_angle_star_train = steering_angle_star[idx]
+    time_star_train = time_star[idx]
+    
 
     # Training
-    model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-    model.train(200) #000)
+    model = PhysicsInformedNN(velocity_star_train, orientation_star_train, acceleration_star_train, steering_angle_star_train, time_star_train, layers)
+    model.train(200000) #000)
     
     # Test Data
     snap = np.array([100])
