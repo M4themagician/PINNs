@@ -225,7 +225,7 @@ if __name__ == "__main__":
     layers = [5, 20, 20, 20, 20, 20, 20, 20, 20, 6]
     
     # Load Data
-    dfs = [pd.read_csv(f'main/Data/data_{k}.csv', sep=',',header=0) for k in range(1, 6)]
+    dfs = [pd.read_csv(f'main/Data/generated_data/{k:05d}.csv', sep=',',header=0) for k in range(1000)]
 
     # data = np.array(df.values)
     # data = np.('../Data/cylinder_nektar_wake.mat')

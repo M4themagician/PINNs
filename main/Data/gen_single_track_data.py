@@ -139,17 +139,15 @@ def generate_random_trajectory( delta_t = 0.01,
 def save_trajectory(trajectory, controls, index, save_path = "/generated_data"):
     import os
     os.makedirs(save_path, exist_ok=True)
-    first = True
+
+                
     with open(f"{save_path}/{index:05d}.csv", 'w+') as f:
+        f.write(f"time,velocity,orientation,acceleration,steering wheel angle,")
         for (T, C) in zip(trajectory.T, controls.T):
             #print(T)
             (t, x, y, v, yaw) = T
             (acceleration, steering) = C
-            if first:
-                f.write(f"{t},{v},{yaw},{acceleration},{steering}")
-                first = False
-            else:
-                f.write(f"\n{t},{v},{yaw},{acceleration},{steering}")
+            f.write(f"\n{t},{v},{yaw},{acceleration},{steering}")
 
 def generate_dataset(n = 1000, save_path = "generated_data/"):
     from tqdm import tqdm
@@ -192,7 +190,7 @@ def plot_random_trajectory():
 
 
 
-def test():
+def test_rk():
     """ Give me a sin
     """
     f = lambda t, x : np.array((x[1], -x[0]))
