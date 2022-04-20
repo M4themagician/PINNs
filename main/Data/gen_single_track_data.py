@@ -3,12 +3,17 @@ import matplotlib.pyplot as plt
 import random
 import math
 
+def random_number(range):
+    return range[0] + (range[1]-range[0])*random.random()
+
 def rk4(t0, x0, f, delta_t, steps):
     """ Simple runge kutta 4 integration method
         integrates d/dt x(t) = f(t, x) starting from (t0, x0) steps times with delta_t stepsize
     """
     trajectory = np.zeros((len(x0) + 1, steps + 1))
     trajectory[:, 0] = [t0, *x0]
+    controls = np.zeros((len(f.get_controls(0)), steps + 1))
+    controls[:, 0] = f.get_controls(t0)
     h = delta_t
     t = t0
     x = x0
@@ -21,14 +26,15 @@ def rk4(t0, x0, f, delta_t, steps):
         x = x + k
         t = t + h
         trajectory[:, i+1] = [t, *x]
-    return trajectory
+        controls[:, i+1] = f.get_controls(t)
+    return trajectory, controls
 
 class RHS():
     def __init__(self,  decay_p = 0.5,  
                         growth_p = 0.5,
                         acceleration_range = [-4, 4],
                         steering_angle_range = [-22/28, 22/28], #~45° max
-                        frequency_scales = 5,
+                        frequency_scales = 6,
                         frequency_range = [-1, 1],
                         wheelbase = 2.78): 
         self.acceleration_range = acceleration_range            
@@ -55,13 +61,12 @@ class RHS():
     def get_random_frequencies_and_amplitudes(self):
         frequencies = list()
         for i in range(self.frequency_scales):
-            frequency_width = (self.frequency_range[1] - self.frequency_range[0])
             sign_s = random.randint(-1, 1)
             sign_c = random.randint(-1, 1)
             sign_a = random.randint(-1, 1)
-            omega_s = sign_s*2**i + self.frequency_range[0] + frequency_width*random.random()
-            omega_c = sign_c*2**i + self.frequency_range[0] + frequency_width*random.random()
-            amplitude = sign_a*(2*random.random() - 1)/(2**i)
+            omega_s = sign_s*2**i + random_number(self.frequency_range)
+            omega_c = sign_c*2**i + random_number(self.frequency_range)
+            amplitude = sign_a*random.random()/(2**i)
             frequencies.append((amplitude, omega_s, omega_c))
         return frequencies
 
@@ -81,6 +86,9 @@ class RHS():
         acceleration = np.clip(acceleration, self.acceleration_range[0], self.acceleration_range[1])
         return acceleration
 
+    def get_controls(self, t):
+        return np.array((self.get_acceleration(t), self.get_steering(t)))
+
     def plot_controls(self, ax, t_range = [0, 1], steps = 100):
         T = np.linspace(t_range[0], t_range[1], steps)
         steering, acc = np.zeros(steps), np.zeros(steps)
@@ -98,7 +106,7 @@ class RHS():
         ydot = v*math.sin(yaw)
         vdot = self.get_acceleration(t)
         yawdot = v/self.wheelbase*math.tan(self.get_steering(t))
-        return np.array(xdot, ydot, vdot, yawdot)
+        return np.array((xdot, ydot, vdot, yawdot))
 
 
 def plot_random_controls():
@@ -111,6 +119,77 @@ def plot_random_controls():
             example_rhs.plot_controls(ax[k, i])
         
     plt.show()
+
+def generate_random_trajectory( delta_t = 0.01,
+                                steps = 1000,
+                                initial_xrange = [-100, 100],
+                                initial_vrange = [-5, 5],
+                                initial_yawrange = [0, 2*math.pi],
+                                ):
+    x0, y0 = random_number(initial_xrange), random_number(initial_xrange)
+    v0 = random_number(initial_vrange)
+    yaw0 = random_number(initial_yawrange)
+    X0 = np.array((x0, y0, v0, yaw0))
+    t0 = 0
+    f = RHS()
+    trajectory, controls = rk4(t0, X0, f, delta_t, steps)
+
+    return trajectory, controls
+
+def save_trajectory(trajectory, controls, index, save_path = "/generated_data"):
+    import os
+    os.makedirs(save_path, exist_ok=True)
+    first = True
+    with open(f"{save_path}/{index:05d}.csv", 'w+') as f:
+        for (T, C) in zip(trajectory.T, controls.T):
+            #print(T)
+            (t, x, y, v, yaw) = T
+            (acceleration, steering) = C
+            if first:
+                f.write(f"{t},{v},{yaw},{acceleration},{steering}")
+                first = False
+            else:
+                f.write(f"\n{t},{v},{yaw},{acceleration},{steering}")
+
+def generate_dataset(n = 1000, save_path = "generated_data/"):
+    from tqdm import tqdm
+    pbar = tqdm(total = n)
+    for i in range(n):
+        trajectory, controls = generate_random_trajectory()
+        save_trajectory(trajectory, controls, i, save_path)
+        pbar.update()
+
+
+def plot_random_trajectory():
+    m = 4
+    fig, ax = plt.subplots(m, 4)
+    for k in range(m):
+        
+        trajectory, controls = generate_random_trajectory()
+        
+        X = trajectory[1, :]
+        Y = trajectory[2, :]
+        T = trajectory[0, :]
+        V = trajectory[3, :]
+        acceleration = controls[0, :]
+        steering = controls[1, :]
+        ax[k, 0].plot(X, Y, label = 'trajectory', color='black')
+        ax[k, 0].plot(X[:1], Y[:1], marker = 'o', color='red', label = 'initial position')
+        ax[k, 0].set_aspect('equal', 'box')
+        ax[k, 0].set(xlabel="x [m]", ylabel="y[m]")
+        ax[k, 1].plot(T, V, label = 'speed')#
+        ax[k, 1].set(xlabel="t [s]", ylabel=r"v [m$s^{-1}$]")
+        ax[k, 2].plot(T, acceleration, label = 'acceleration', color='red')
+        ax[k, 2].set(xlabel="t [s]", ylabel=r"a [m$s^{-2}$]")
+        ax[k, 3].plot(T, steering, label = 'steering', color='red')
+        ax[k, 3].set(xlabel="t [s]", ylabel=r'$\delta$ [rad]')
+        for a in ax[k, :]:
+            a.legend()
+    fig.set_figheight(10)
+    fig.set_figwidth(20)
+    plt.tight_layout()
+    plt.show()
+
 
 
 def test():
@@ -128,4 +207,4 @@ def test():
     plt.show()
 
 if __name__ == "__main__":
-    plot_random_controls()
+    generate_dataset()
