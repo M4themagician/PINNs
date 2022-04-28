@@ -9,6 +9,8 @@ def random_number(range):
 def rk4(t0, x0, f, delta_t, steps):
     """ Simple runge kutta 4 integration method
         integrates d/dt x(t) = f(t, x) starting from (t0, x0) steps times with delta_t stepsize
+        ODE can't be scalar for now lol
+        f needs to implement a .get_controls(t) method that returns a list  of controls at time t
     """
     trajectory = np.zeros((len(x0) + 1, steps + 1))
     trajectory[:, 0] = [t0, *x0]
@@ -29,7 +31,7 @@ def rk4(t0, x0, f, delta_t, steps):
         controls[:, i+1] = f.get_controls(t)
     return trajectory, controls
 
-class RHS():
+class singleTrackRHS():
     def __init__(self,  decay_p = 0.5,  
                         growth_p = 0.5,
                         acceleration_range = [-4, 4],
@@ -46,8 +48,6 @@ class RHS():
         self.base_acceleration = self.acceleration_range[0] + self.acceleration_width*random.random()
         self.steering_width = self.steering_angle_range[1] - self.steering_angle_range[0]
         self.base_steering = self.steering_angle_range[0] + self.steering_width*random.random()
-        
-        
         # self.use_linear_decay = random.random() < decay_p
         # self.use_linear_growth = False if self.use_linear_decay else random.random() < growth_p
 
@@ -57,7 +57,6 @@ class RHS():
         self.frequencies_steering = self.get_random_frequencies_and_amplitudes()
         self.frequencies_acceleration = self.get_random_frequencies_and_amplitudes()
         
-    
     def get_random_frequencies_and_amplitudes(self):
         frequencies = list()
         for i in range(self.frequency_scales):
@@ -99,7 +98,6 @@ class RHS():
         ax.plot(T, acc, label="acceleration")
         ax.legend()
 
-    
     def __call__(self, t, X):
         (x, y, v, yaw) = X
         xdot = v*math.cos(yaw)
@@ -115,10 +113,10 @@ def plot_random_controls():
     fig, ax = plt.subplots(m, n, sharey='row')
     for i in range(n):
         for k in range(m):
-            example_rhs = RHS()
-            example_rhs.plot_controls(ax[k, i])
-        
+            example_rhs = singleTrackRHS()
+            example_rhs.plot_controls(ax[k, i])  
     plt.show()
+
 
 def generate_random_trajectory( delta_t = 0.01,
                                 steps = 1000,
@@ -131,16 +129,14 @@ def generate_random_trajectory( delta_t = 0.01,
     yaw0 = random_number(initial_yawrange)
     X0 = np.array((x0, y0, v0, yaw0))
     t0 = 0
-    f = RHS()
+    f = singleTrackRHS()
     trajectory, controls = rk4(t0, X0, f, delta_t, steps)
 
     return trajectory, controls
 
 def save_trajectory(trajectory, controls, index, save_path = "/generated_data"):
     import os
-    os.makedirs(save_path, exist_ok=True)
-
-                
+    os.makedirs(save_path, exist_ok=True)           
     with open(f"{save_path}/{index:05d}.csv", 'w+') as f:
         f.write(f"time,velocity,orientation,acceleration,steering wheel angle,")
         for (T, C) in zip(trajectory.T, controls.T):
@@ -157,14 +153,11 @@ def generate_dataset(n = 1000, save_path = "generated_data/"):
         save_trajectory(trajectory, controls, i, save_path)
         pbar.update()
 
-
 def plot_random_trajectory():
     m = 4
     fig, ax = plt.subplots(m, 4)
     for k in range(m):
-        
         trajectory, controls = generate_random_trajectory()
-        
         X = trajectory[1, :]
         Y = trajectory[2, :]
         T = trajectory[0, :]
@@ -187,8 +180,6 @@ def plot_random_trajectory():
     fig.set_figwidth(20)
     plt.tight_layout()
     plt.show()
-
-
 
 def test_rk():
     """ Give me a sin
